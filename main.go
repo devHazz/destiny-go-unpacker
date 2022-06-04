@@ -5,10 +5,14 @@ import (
 	"os"
 	//"bytes"
 	"encoding/binary"
-	"header.go"
 )
 
-
+type header struct {
+	PkgID uint16
+	PatchID uint16
+	EntryTableOffset uint32
+	EntryTableCount uint32
+}
 
 type entry struct {
 	ref uint
@@ -18,7 +22,6 @@ type entry struct {
 }
 
 func getHeader(path string) (ret header) {
-	&model.header
 	file, err := os.Open(path)
 	if err != nil {
 		fmt.Print(err)
@@ -28,7 +31,6 @@ func getHeader(path string) (ret header) {
 	if readError != nil {
 		fmt.Println(readError)
 	}
-	model.headerStruct()
 	var h header
 	header_data := data[:header_length]
 	h.PkgID = binary.LittleEndian.Uint16(header_data[0x10:])
@@ -40,6 +42,6 @@ func getHeader(path string) (ret header) {
 
 func main() {
     fmt.Println("Destiny 2 Go Unpacker, Written by Hazz")
-	g := getHeader("./files/example.pkg") //Set Package Path Here
+	g := getHeader("./test/example.pkg") //Set Package Path Here
 	fmt.Printf("Package ID: %d\nPatch ID: %d\nEntry Table Offset: %d\nEntry Table Count: %d", g.PkgID, g.PatchID, g.EntryTableOffset, g.EntryTableCount)
 }
