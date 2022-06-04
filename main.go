@@ -8,15 +8,7 @@ import (
 	"model"
 )
 
-type entry struct {
-	ref uint
-	entryB uint 
-	entryC uint 
-	entryD uint 
-}
-
 func getHeader(path string) (ret model.Header) {
-	
 	file, err := os.Open(path)
 	if err != nil {
 		fmt.Print(err)
