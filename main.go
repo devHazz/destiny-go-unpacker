@@ -5,14 +5,8 @@ import (
 	"os"
 	//"bytes"
 	"encoding/binary"
+	"model"
 )
-
-type header struct {
-	PkgID uint16
-	PatchID uint16
-	EntryTableOffset uint32
-	EntryTableCount uint32
-}
 
 type entry struct {
 	ref uint
@@ -21,7 +15,8 @@ type entry struct {
 	entryD uint 
 }
 
-func getHeader(path string) (ret header) {
+func getHeader(path string) (ret model.Header) {
+	
 	file, err := os.Open(path)
 	if err != nil {
 		fmt.Print(err)
@@ -31,7 +26,7 @@ func getHeader(path string) (ret header) {
 	if readError != nil {
 		fmt.Println(readError)
 	}
-	var h header
+	var h model.Header
 	header_data := data[:header_length]
 	h.PkgID = binary.LittleEndian.Uint16(header_data[0x10:])
 	h.PatchID = binary.LittleEndian.Uint16(header_data[0x30:])
