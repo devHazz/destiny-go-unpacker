@@ -1,17 +1,17 @@
 package model
 
 type Entries struct {
-	a uint32
-	b uint32
-	c uint32
-	d uint32
+	A uint32
+	B uint32
+	C uint32
+	D uint32
 }
 
 type Entry struct {
-	ref uint
-	numType uint
-	numSubType uint
-	startingBlock uint
-	startingBlockOffset uint
-	fileSize uint
+	Ref uint
+	NumType uint
+	NumSubType uint
+	StartingBlock uint
+	StartingBlockOffset uint
+	FileSize uint
 }
