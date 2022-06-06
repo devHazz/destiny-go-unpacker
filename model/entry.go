@@ -8,10 +8,10 @@ type Entries struct {
 }
 
 type Entry struct {
-	Ref uint
-	NumType uint
-	NumSubType uint
-	StartingBlock uint
-	StartingBlockOffset uint
-	FileSize uint
+	Ref uint32
+	NumType uint32
+	NumSubType uint32
+	StartingBlock uint32
+	StartingBlockOffset uint32
+	FileSize uint32
 }
