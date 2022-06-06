@@ -44,6 +44,7 @@ func getHeader() (ret model.Header) {
 func getEntries() (ret model.Entries) {
 	header := getHeader()
 	var entries model.Entries;
+	var decoded_entries []model.Entry
 	entry_bin := header.HeaderBin[header.EntryTableOffset:header.EntryTableCount]
 	for i:= 0; i < int(header.EntryTableCount) * 16; i += 16 {
 		//data := make([]byte, header.FileSize)
@@ -53,8 +54,10 @@ func getEntries() (ret model.Entries) {
 		entries.B = binary.LittleEndian.Uint32(entry_bin[i + 4:])
 		entries.C = binary.LittleEndian.Uint32(entry_bin[i + 8:])
 		entries.D = binary.LittleEndian.Uint32(entry_bin[i + 12:])
+		entry := readEntry(entries)
+		decoded_entries = append(decoded_entries, entry)
 	}
-	return entries
+	return decoded_entries
 }
 
 func getBlocks() (ret []model.Block) {
@@ -85,6 +88,20 @@ func getBlocks() (ret []model.Block) {
 		blocks_slice = append(blocks_slice, block)
 	}
 	return blocks_slice
+}
+
+func readEntry(raw_entry model.Entries) (ret []model.Entry) {
+	header := getHeader()
+	entries := getEntries()
+
+	var entry model.Entry
+	entry.Ref = entries.A
+	entry.NumType = (entries.B >> 9) & 0x7F
+	entry.NumSubType = (entries.B >> 6) & 0x7
+	entry.StartingBlock = entries.C & 0x3FFF
+	entry.StartingBlockOffset = ((entryC >> 14) & 0x3FFF) << 4
+	entry.FileSize = (entryD & 0x3FFFFFF) << 4 | (entryC >> 28) & 0xF
+	return entry
 }
 
 func main() {
