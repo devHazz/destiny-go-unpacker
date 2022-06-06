@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"model"
 	"io"
+	"github.com/new-world-tools/go-oodle"
 )
 
 //var header_data model.Header
@@ -69,7 +70,7 @@ func getBlocks() (ret []model.Block) {
 		fmt.Print(err)
 	}
 	defer file.Close()
-	block_table := header.BlockTableOffset+header.BlockTableSize*48
+	block_table := header.BlockTableOffset + header.BlockTableSize * 48
 	for i:= header.BlockTableOffset; i < block_table; i += 48 {
 
 		//binary.Read(i, binary.LittleEndian, &blockDataStruct)
@@ -102,6 +103,14 @@ func readEntry(raw_entry model.Entries) (ret []model.Entry) {
 	entry.StartingBlockOffset = ((entryC >> 14) & 0x3FFF) << 4
 	entry.FileSize = (entryD & 0x3FFFFFF) << 4 | (entryC >> 28) & 0xF
 	return entry
+}
+
+func oodleDecompressBlock(block model.Block) (ret []byte) {
+	blocks := getBlocks()
+	var decompressed_blocks []model.Block
+	for i := 0; i < len(blocks); i += 1 {
+		decompress := oodle.Decompress()
+	}
 }
 
 func main() {
