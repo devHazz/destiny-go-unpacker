@@ -17,9 +17,10 @@ import (
 
 //var header_data model.Header
 var header_data model.Header
-var nonce [12]byte
+var nonce []byte
 
 func latestPatchId(id string) (ret string) {
+
 	pkgPath := model.Path
 	var patchId string
 	largestId := "-1"
@@ -126,49 +127,55 @@ func readEntry(rawEntry model.Entries) (ret model.Entry) {
 	entry.StartingBlockOffset = ((rawEntry.C >> 14) & 0x3FFF) << 4
 	entry.FileSize = (rawEntry.D&0x3FFFFFF)<<4 | (rawEntry.C>>28)&0xF
 
-	if entry.NumType == uint32(0x11) {
-		fmt.Println("Image Type")
-	}
+	//hex := fmt.Sprintf("0x%x", entry.NumType)
+	//fmt.Println(hex)
 	return entry
 }
 
 func oodleDecompressBlock(block model.Block, block_bin []byte) (ret []byte) {
+	if !oodle.IsDllExist() {
+		log.Fatal("DLL not here mate")
+	}
 	decompress, err := oodle.Decompress(block_bin, 0x40000)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 	return decompress
 }
 
-func changeNonce() (ret [0xC]byte) {
-	nonce = model.Nonce
-	nonce[0] ^= byte(header_data.PkgID>>8) & 0xFF
-	nonce[11] ^= byte(header_data.PkgID) & 0xFF
-	return nonce
+func changeNonce() {
+	model.Nonce[0] ^= byte(header_data.PkgID >> 8 & 0xFF)
+	model.Nonce[11] ^= byte(header_data.PkgID & 0xFF)
 }
 
 func decrypt(block model.Block, blockBin []byte) (ret []byte) {
 	var key []byte
-	if block.BitFlag&4 != 0 {
+	if block.BitFlag&0x4 != 0 {
 		key = model.AES_2
 	} else {
 		key = model.AES_1
 	}
-	cipherBlock, err := aes.NewCipher([]byte(key))
+	blockBin = append(model.Nonce, blockBin...)
+	blockBin = append(blockBin, block.GcmTag...)
+
+	cipherBlock, err := aes.NewCipher(key)
 	if err != nil {
-		fmt.Println(err)
+		log.Panic("Cipher error")
 	}
 
 	aesgcm, err := cipher.NewGCM(cipherBlock)
 	if err != nil {
-		fmt.Println(err)
+		log.Panic("New GCM Error")
 	}
-	nonce := changeNonce()
-	pt, err := aesgcm.Open(nil, nonce[:], blockBin, nil)
+	//fmt.Println(aesgcm.NonceSize())
+	//fmt.Printf("tag Size: {%d}\n", aesgcm.Overhead())
+	//gcmNonce := changeNonce()
+	pr, err := aesgcm.Open(nil, blockBin[:aesgcm.NonceSize()], blockBin[12:], nil)
 	if err != nil {
-		fmt.Println(err)
+		log.Panic(err)
 	}
-	return pt
+	blockBin = pr
+	return blockBin
 }
 
 func extract() {
@@ -179,55 +186,86 @@ func extract() {
 		fmt.Print(err)
 	}
 	defer file.Close()
+	for i := 0; i <= int(header_data.PatchID); i++ {
+		patchPath := model.PackagePath
+		patchPath = patchPath[:len(patchPath)-5] + string(rune(i+48))
+		model.PatchStreamPath = append(model.PatchStreamPath, patchPath)
+		//fmt.Println(model.PatchStreamPath)
+	}
+	changeNonce()
 	for i := 0; i < len(entries); i++ {
 		currentEntry := entries[i]
 		blockIndex := currentEntry.StartingBlock
 		blockStartingIndex := currentEntry.StartingBlockOffset
-		blockCount := math.Floor((float64(currentEntry.StartingBlockOffset) + float64(currentEntry.FileSize) - 1) / 0x40000)
+		blockCount := math.Floor((float64(blockStartingIndex) + float64(currentEntry.FileSize) - 1) / 262144)
 		fileBuffer := make([]byte, currentEntry.FileSize)
 		if currentEntry.FileSize == 0 {
 			blockCount = 0
 		}
 		lastBlockIndex := blockIndex + uint32(blockCount)
+		var curBufferOffset int = 0
 		for blockIndex <= lastBlockIndex {
-			currentBlock := blocks[blockIndex] //blockIndex == 8539?
-
-			/*
-				blockBuffer := make([]byte, currentBlock.Size)
-				decryptBuffer := make([]byte, currentBlock.Size)
-				decompBuffer := make([]byte, 0x40000)
-			*/
-			currentBlockBin := header_data.HeaderBin[currentBlock.Offset : currentBlock.Offset+currentBlock.Size]
-			if blocks[i].BitFlag&0x2 != 0 {
-				//AES Decryption needed
-				currentBlockBin = decrypt(currentBlock, currentBlockBin)
+			currentBlock := blocks[blockIndex]
+			file, err := os.Open(model.PatchStreamPath[currentBlock.PatchID] + ".pkg")
+			if err != nil {
+				log.Fatal(err)
 			}
-			if blocks[i].BitFlag&0x1 != 0 {
-				//Oodle decompression needed
-				currentBlockBin = oodleDecompressBlock(blocks[i], currentBlockBin)
+			file.Seek(int64(currentBlock.Offset), io.SeekStart)
+			blockBuffer := make([]byte, currentBlock.Size)
+			n, _ := file.Read(blockBuffer)
+
+			if uint32(n) != currentBlock.Size {
+				log.Fatal("Reading Error")
+			}
+			blockBuffer = blockBuffer[:n]
+			decryptBuffer := make([]byte, currentBlock.Size)
+			decompBuffer := make([]byte, 262144)
+
+			if currentBlock.BitFlag&0x2 != 0 {
+				decryptBuffer = decrypt(currentBlock, blockBuffer)
+			} else {
+				decryptBuffer = blockBuffer
+			}
+			if currentBlock.BitFlag&0x1 != 0 {
+				decompBuffer = oodleDecompressBlock(currentBlock, decryptBuffer)
+			} else {
+				decompBuffer = decryptBuffer
 			}
 			if blockIndex == currentEntry.StartingBlock {
-				fileBuffer = currentBlockBin[blockStartingIndex:]
-				/*
-					var size int
-					if blockIndex == lastBlockIndex {
-						size = int(currentEntry.FileSize)
-					} else {
-						size = int(0x40000 - currentEntry.StartingBlockOffset)
-					}
-				*/
+				size := 0
+				if blockIndex == lastBlockIndex {
+					size = int(currentEntry.FileSize)
+				} else {
+					size = int(262144 - currentEntry.StartingBlockOffset)
+				}
+
+				copy(fileBuffer[0:size], decompBuffer[currentEntry.StartingBlockOffset:currentEntry.StartingBlockOffset+uint32(size)]) //append(fileBuffer[:size], decompBuffer[currentEntry.StartingBlockOffset:currentEntry.StartingBlockOffset+uint32(size)]...)
+				curBufferOffset += size
+			} else if blockIndex == lastBlockIndex {
+				copy(fileBuffer[curBufferOffset:], decompBuffer[:currentEntry.FileSize-uint32(curBufferOffset)])
 			} else {
-				fileBuffer = append(fileBuffer, currentBlockBin...)
+				copy(fileBuffer[curBufferOffset:(curBufferOffset+262144)], decompBuffer[0:262144])
+				curBufferOffset += 262144
 			}
+			defer file.Close()
 			blockIndex += 1
+			decompBuffer = nil
 		}
+		path := model.OutputPath + "/" + fmt.Sprintf("%x", header_data.PkgID) + "-" + fmt.Sprintf("%x", i) + ".bin"
+		err := os.WriteFile(path, fileBuffer, 0666)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 	}
+	fmt.Println("Wrote .bin files to output path")
 }
 
 func main() {
 	model.Path = "D:/SteamLibrary/steamapps/common/Destiny 2/packages"
+	model.OutputPath = "./output"
 	model.PackagePath = latestPatchId("018a")
-	fmt.Println(model.PackagePath)
+	//fmt.Println(model.PackagePath)
 	extract()
 	//fmt.Printf("Package ID: %d\nPatch ID: %d\nEntry Table Offset: %d\nEntry Table Count: %d", g.PkgID, g.PatchID, g.EntryTableOffset, g.EntryTableCount)
 }
